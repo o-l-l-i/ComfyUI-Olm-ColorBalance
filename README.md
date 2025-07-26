@@ -7,7 +7,7 @@ An interactive, **color balance** adjustment node for ComfyUI, featuring a clean
 - **Author:** Olli Sorjonen
 - **GitHub:** https://github.com/o-l-l-i
 - **X:** https://x.com/Olmirad
-- **Version:** 1.0.0 (Initial release)
+- **Version:** 1.0.1 (Preview improvements, code cleanup)
 
 ---
 
