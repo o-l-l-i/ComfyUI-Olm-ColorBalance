@@ -7,7 +7,7 @@ An interactive, **color balance** adjustment node for ComfyUI, featuring a clean
 - **Author:** Olli Sorjonen
 - **GitHub:** https://github.com/o-l-l-i
 - **X:** https://x.com/Olmirad
-- **Version:** 1.0.1 (Preview improvements, code cleanup)
+- **Version:** 1.0.1.1 (Chain original mouse event handlers to maintain subgraph header button functionality in ComfyUI frontend 1.24.4 and later.)
 
 ---
 
@@ -123,6 +123,14 @@ This extension is experimental and under active development. Functionality, beha
 Use at your own risk in your workflows. Back up your work often.
 
 Feedback and suggestions are welcome — but expect bugs, sharp edges, and features to evolve as time allows.
+
+---
+
+## Version history
+
+- **1.0.1.1** Chain original mouse event handlers to maintain subgraph header button functionality in ComfyUI frontend 1.24.4 and later.
+- **1.0.1** Preview improvements, code cleanup.
+- **1.0** Initial release.
 
 ---
 

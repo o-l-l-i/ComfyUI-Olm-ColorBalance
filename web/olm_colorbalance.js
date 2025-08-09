@@ -16,6 +16,7 @@ function removeInputs(node, filter) {
     !Array.isArray(node.inputs)
   )
     return;
+
   for (let i = node.inputs.length - 1; i >= 0; i--) {
     const input = node.inputs[i];
     if (filter(input)) {
@@ -156,10 +157,6 @@ app.registerExtension({
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     const originalOnDrawForeground = nodeType.prototype.onDrawForeground;
     const originalOnConfigure = nodeType.prototype.onConfigure;
-    const originalOnMouseDown = nodeType.prototype.onMouseDown;
-    const originalOnMouseMove = nodeType.prototype.onMouseMove;
-    const originalOnMouseUp = nodeType.prototype.onMouseUp;
-    const originalOnMouseLeave = nodeType.prototype.onMouseLeave;
     const onExecutedOriginal = nodeType.prototype.onExecuted;
 
     nodeType.prototype.onNodeCreated = function () {
@@ -394,71 +391,88 @@ app.registerExtension({
       this.drawPreviewImage(ctx, startY, sliderSpacing);
     };
 
-    nodeType.prototype.onMouseDown = function (event, localPos, graphCanvas) {
-      if (originalOnMouseDown?.call(this, event, localPos, graphCanvas))
-        return true;
-      if (this.custom_widgets) {
-        for (const w of this.custom_widgets) {
+    function patchNodeMouseHandlers(node) {
+      const originalOnMouseDown = node.onMouseDown;
+      const originalOnMouseMove = node.onMouseMove;
+      const originalOnMouseUp = node.onMouseUp;
+      const originalOnMouseLeave = node.onMouseLeave;
+
+      function dispatch(eventType, event, localPos) {
+        if (!node.custom_widgets) return false;
+
+        for (const widget of node.custom_widgets) {
+          const handler = widget[eventType];
           if (
-            typeof w.onMouseMove === "function" &&
-            w.onMouseDown(event, localPos)
+            typeof handler === "function" &&
+            handler.call(widget, event, localPos)
           ) {
             return true;
           }
         }
-      }
-      return false;
-    };
 
-    nodeType.prototype.onMouseMove = function (event, localPos, graphCanvas) {
-      if (originalOnMouseMove?.call(this, event, localPos, graphCanvas))
-        return true;
-      if (this.custom_widgets) {
-        for (const w of this.custom_widgets) {
-          if (
-            typeof w.onMouseMove === "function" &&
-            w.onMouseMove(event, localPos)
-          ) {
-            return true;
+        return false;
+      }
+
+      node.onMouseDown = function (event, localPos, graphCanvas) {
+        const handled = originalOnMouseDown?.call(
+          this,
+          event,
+          localPos,
+          graphCanvas
+        );
+        if (handled) return true;
+        return dispatch("onMouseDown", event, localPos);
+      };
+
+      node.onMouseMove = function (event, localPos, graphCanvas) {
+        const handled = originalOnMouseMove?.call(
+          this,
+          event,
+          localPos,
+          graphCanvas
+        );
+        if (handled) return true;
+        return dispatch("onMouseMove", event, localPos);
+      };
+
+      node.onMouseUp = function (event, localPos, graphCanvas) {
+        const handled = originalOnMouseUp?.call(
+          this,
+          event,
+          localPos,
+          graphCanvas
+        );
+        if (handled) return true;
+        return dispatch("onMouseUp", event, localPos);
+      };
+
+      node.onMouseLeave = function (event, localPos, graphCanvas) {
+        const wasHandled = originalOnMouseLeave?.call(
+          this,
+          event,
+          localPos,
+          graphCanvas
+        );
+        if (wasHandled) return true;
+
+        const fallbackPos = localPos ?? [
+          Number.NEGATIVE_INFINITY,
+          Number.NEGATIVE_INFINITY,
+        ];
+
+        if (node.custom_widgets) {
+          for (const widget of node.custom_widgets) {
+            if (typeof widget.onMouseLeave === "function") {
+              widget.onMouseLeave(event, fallbackPos);
+            } else if (typeof widget.onMouseUp === "function") {
+              widget.onMouseUp(event, fallbackPos);
+            }
           }
         }
-      }
-      return false;
-    };
 
-    nodeType.prototype.onMouseUp = function (event, localPos, graphCanvas) {
-      if (originalOnMouseUp?.call(this, event, localPos, graphCanvas))
-        return true;
-      if (this.custom_widgets) {
-        for (const w of this.custom_widgets) {
-          if (
-            typeof w.onMouseMove === "function" &&
-            w.onMouseUp(event, localPos)
-          ) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
-
-    nodeType.prototype.onMouseLeave = function (event, localPos, graphCanvas) {
-      if (originalOnMouseLeave?.call(this, event, localPos, graphCanvas))
-        return true;
-
-      if (this.custom_widgets) {
-        for (const w of this.custom_widgets) {
-          if (
-            typeof w.onMouseMove === "function" &&
-            w.onMouseUp &&
-            w.onMouseUp(event, localPos)
-          ) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
+        return false;
+      };
+    }
 
     nodeType.prototype.forceUpdate = function () {
       const version_widget = this.getWidget("version");
@@ -499,10 +513,13 @@ app.registerExtension({
       );
 
       this.forceUpdate();
+
       this.setDirtyCanvas(true, true);
     };
 
     nodeType.prototype.onAdded = function () {
+      patchNodeMouseHandlers(this);
+
       removeInputs(
         this,
         (input) =>
