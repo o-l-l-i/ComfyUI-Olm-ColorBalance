@@ -24,7 +24,7 @@ function removeInputs(node, filter) {
       } catch (error) {
         console.warn(
           `[OlmColorBalance] Node ${node.id}: skipping input removal (graph not ready):`,
-          node.inputs[i].name
+          node.inputs[i].name,
         );
       }
     }
@@ -34,8 +34,64 @@ function removeInputs(node, filter) {
 function hideWidget(widget, extraYOffset = -4) {
   if (widget) {
     widget.hidden = true;
+    widget.type = "hidden";
     widget.computeSize = () => [0, extraYOffset];
   }
+}
+
+function getSlotAreaBottom(node) {
+  const slotHeight = LiteGraph?.NODE_SLOT_HEIGHT ?? 20;
+  let bottom = 0;
+
+  const updateFromSlot = (isInput, index) => {
+    try {
+      const pos = node.getConnectionPos(isInput, index);
+      if (Array.isArray(pos) || ArrayBuffer.isView(pos)) {
+        bottom = Math.max(bottom, pos[1] - node.pos[1] + slotHeight * 0.5);
+      }
+    } catch (error) {}
+  };
+
+  for (let i = 0; i < (node.inputs?.length ?? 0); i++) {
+    updateFromSlot(true, i);
+  }
+
+  for (let i = 0; i < (node.outputs?.length ?? 0); i++) {
+    updateFromSlot(false, i);
+  }
+
+  if (bottom <= 0) {
+    const rows = Math.max(
+      node.inputs?.length ?? 1,
+      node.outputs?.length ?? 1,
+      1,
+    );
+    bottom = (node.constructor?.slot_start_y ?? 0) + rows * slotHeight;
+  }
+
+  return bottom;
+}
+
+function getCustomLayout(node) {
+  const sliderSpacing = 40;
+  const topPadding = 100;
+  const toneGap = 24;
+  const previewGap = 48;
+  const bottomPadding = 20;
+  const slotBottom = getSlotAreaBottom(node);
+  const startY = slotBottom + topPadding;
+  const sliderCount = 3;
+  const toneY = startY + sliderCount * sliderSpacing + toneGap;
+  const previewY = toneY + (node.toneToggle?.height ?? 25) + previewGap;
+  const availableHeight = Math.max(0, node.size[1] - previewY - bottomPadding);
+
+  return {
+    sliderSpacing,
+    startY,
+    toneY,
+    previewY,
+    previewSize: Math.max(40, Math.min(node.size[0] * 0.95, availableHeight)),
+  };
 }
 
 function hideDefaultWidgets(node, filter) {
@@ -43,6 +99,8 @@ function hideDefaultWidgets(node, filter) {
     const widget = node.widgets[i];
     if (filter(widget)) {
       widget.hidden = true;
+      widget.type = "hidden";
+      widget.computeSize = () => [0, 0];
     }
   }
 }
@@ -51,7 +109,7 @@ function initBalanceProperties(node) {
   node.properties = node.properties || {};
   if (!node.properties.balance_values) {
     node.properties.balance_values = JSON.parse(
-      JSON.stringify(DEFAULT_BALANCE_VALUES)
+      JSON.stringify(DEFAULT_BALANCE_VALUES),
     );
   }
   if (!node.properties.selected_tone) {
@@ -64,7 +122,7 @@ function createChannelSlider(
   channel,
   label,
   gradientColors,
-  updateBalanceProperty
+  updateBalanceProperty,
 ) {
   return new ChannelSliderWidget(
     node,
@@ -77,7 +135,7 @@ function createChannelSlider(
     {
       label,
       gradientColors,
-    }
+    },
   );
 }
 
@@ -105,14 +163,12 @@ function createPreviewUpdateFunction(node) {
         preserve_luminosity: node.properties.preserve_luminosity,
       };
       fetch(
-        `/olm/api/colorbalance/update?key=${encodeURIComponent(
-          node.previewCacheKey
-        )}`,
+        `/olm/api/colorbalance/update?key=${encodeURIComponent(node.previewCacheKey)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-        }
+        },
       )
         .then((res) => res.json())
         .then((data) => {
@@ -176,7 +232,7 @@ app.registerExtension({
 
       hideDefaultWidgets(
         node,
-        (w) => w.type === "number" || w.type === "slider"
+        (w) => w.type === "number" || w.type === "slider",
       );
 
       const backendLumWidget = node.getWidget("preserve_luminosity");
@@ -199,21 +255,21 @@ app.registerExtension({
         "r",
         "Cyan - Red",
         ["#00ffff", "#ff0000"],
-        updateBalance
+        updateBalance,
       );
       node.sliderG = createChannelSlider(
         node,
         "g",
         "Magenta - Green",
         ["#ff00ff", "#00ff00"],
-        updateBalance
+        updateBalance,
       );
       node.sliderB = createChannelSlider(
         node,
         "b",
         "Yellow - Blue",
         ["#ffff00", "#0000ff"],
-        updateBalance
+        updateBalance,
       );
       node.custom_widgets.push(node.sliderR, node.sliderG, node.sliderB);
 
@@ -227,7 +283,7 @@ app.registerExtension({
           node.setWidgetValue("strength", val);
           node.requestPreviewUpdate();
         },
-        { min: 0, max: 4.0, step: 0.01 }
+        { min: 0, max: 4.0, step: 0.01 },
       );
       node.custom_widgets.push(node.strengthWidget);
 
@@ -240,7 +296,7 @@ app.registerExtension({
           node.properties.preserve_luminosity = val;
           if (backendLumWidget) node.setWidgetValue(backendLumWidget.name, val);
           node.requestPreviewUpdate();
-        }
+        },
       );
       node.custom_widgets.push(node.preserveLuminosityWidget);
 
@@ -251,13 +307,13 @@ app.registerExtension({
         (tone) => {
           node.properties.selected_tone = tone;
           node.updateSlidersUI();
-        }
+        },
       );
       node.custom_widgets.push(node.toneToggle);
 
       node.resetBalanceValues = () => {
         node.properties.balance_values = JSON.parse(
-          JSON.stringify(DEFAULT_BALANCE_VALUES)
+          JSON.stringify(DEFAULT_BALANCE_VALUES),
         );
         for (const tone of ["shadows", "midtones", "highlights"]) {
           for (const ch of ["r", "g", "b"]) {
@@ -313,16 +369,12 @@ app.registerExtension({
       return size;
     };
 
-    nodeType.prototype.drawPreviewImage = function (
-      ctx,
-      startY,
-      sliderSpacing
-    ) {
-      const availableHeight = this.size[1] - 310;
-      const previewSize = Math.min(this.size[0] * 0.95, availableHeight);
+    nodeType.prototype.drawPreviewImage = function (ctx, layout) {
+      const previewSize = layout.previewSize;
       const previewCenterX = this.size[0] / 2.0;
-      const y = startY + 3 * sliderSpacing + 135;
+      const y = layout.previewY;
 
+      ctx.save();
       if (this._previewImage && this._previewImage.complete) {
         const img = this._previewImage;
         const aspect = img.width / img.height;
@@ -340,16 +392,13 @@ app.registerExtension({
         const drawX = previewCenterX - drawWidth / 2;
         const drawY = y + (previewSize - drawHeight) / 2;
 
-        ctx.save();
         ctx.globalAlpha = 0.95;
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
         ctx.strokeStyle = "#888";
         ctx.lineWidth = 1;
         ctx.strokeRect(drawX, drawY, drawWidth, drawHeight);
-        ctx.restore();
       } else {
-        ctx.save();
         ctx.fillStyle = "#AAA";
         ctx.font = "12px Arial";
         ctx.textAlign = "center";
@@ -358,14 +407,13 @@ app.registerExtension({
         ctx.fillText(
           "Run the graph once to generate preview.",
           previewCenterX,
-          y + previewSize / 2 - 10
+          y + previewSize / 2 - 10,
         );
         ctx.fillText(
           "Note: requires output connection to function.",
           previewCenterX,
-          y + previewSize / 2 + 10
+          y + previewSize / 2 + 10,
         );
-        ctx.restore();
       }
       ctx.restore();
     };
@@ -375,26 +423,23 @@ app.registerExtension({
       if (this.flags.collapsed) return;
 
       ctx.save();
-      const widgetHeight = this.widgets
-        .filter((w) => !w.hidden && typeof w.computeSize === "function")
-        .reduce((acc, w) => acc + w.computeSize([this.size[0]])[1], 0);
-
-      const startY = widgetHeight + 40;
-      const sliderSpacing = 40;
+      const layout = getCustomLayout(this);
 
       [this.sliderR, this.sliderG, this.sliderB].forEach((slider, i) => {
         slider.width = this.size[0] * 0.85;
         slider.x = this.size[0] / 2.0 - slider.width / 2.0;
-        slider.y = startY + i * sliderSpacing;
+        slider.y = layout.startY + i * layout.sliderSpacing;
         ctx.save();
         ctx.translate(slider.x, slider.y);
         slider.draw(ctx);
         ctx.restore();
       });
 
+      this.toneToggle.marginTop = layout.toneY;
       this.toneToggle.draw(ctx);
 
-      this.drawPreviewImage(ctx, startY, sliderSpacing);
+      this.drawPreviewImage(ctx, layout);
+      ctx.restore();
     };
 
     function patchNodeMouseHandlers(node) {
@@ -424,7 +469,7 @@ app.registerExtension({
           this,
           event,
           localPos,
-          graphCanvas
+          graphCanvas,
         );
         if (handled) return true;
         return dispatch("onMouseDown", event, localPos);
@@ -435,7 +480,7 @@ app.registerExtension({
           this,
           event,
           localPos,
-          graphCanvas
+          graphCanvas,
         );
         if (handled) return true;
         return dispatch("onMouseMove", event, localPos);
@@ -446,7 +491,7 @@ app.registerExtension({
           this,
           event,
           localPos,
-          graphCanvas
+          graphCanvas,
         );
         if (handled) return true;
         return dispatch("onMouseUp", event, localPos);
@@ -457,7 +502,7 @@ app.registerExtension({
           this,
           event,
           localPos,
-          graphCanvas
+          graphCanvas,
         );
         if (wasHandled) return true;
 
@@ -500,7 +545,7 @@ app.registerExtension({
 
       this.setWidgetValue(
         this.preserveLuminosityWidget.name,
-        this.properties.preserve_luminosity
+        this.properties.preserve_luminosity,
       );
 
       if (this.toneToggle && this.properties.selected_tone) {
@@ -515,9 +560,8 @@ app.registerExtension({
         (input) =>
           input.type === "FLOAT" ||
           input.type === "STRING" ||
-          input.type === "BOOLEAN"
+          input.type === "BOOLEAN",
       );
-
       this.forceUpdate();
 
       this.setDirtyCanvas(true, true);
@@ -525,13 +569,12 @@ app.registerExtension({
 
     nodeType.prototype.onAdded = function () {
       patchNodeMouseHandlers(this);
-
       removeInputs(
         this,
         (input) =>
           input.type === "FLOAT" ||
           input.type === "STRING" ||
-          input.type === "BOOLEAN"
+          input.type === "BOOLEAN",
       );
     };
 
@@ -547,7 +590,7 @@ app.registerExtension({
       } else {
         console.warn(
           `[OlmColorBalance] Node ${this.id}: Invalid cache key in onExecuted:`,
-          key
+          key,
         );
       }
     };
